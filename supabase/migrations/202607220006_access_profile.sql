@@ -23,3 +23,4 @@ revoke all
 grant execute
   on function public.get_my_access_profile()
   to authenticated;
+
