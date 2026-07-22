@@ -14,13 +14,21 @@ export async function proxy(request:NextRequest){
   }});
   const {data:{user}}=await supabase.auth.getUser();
   const isLogin=request.nextUrl.pathname==="/login";
+  const clearSessionAndRedirect=async(error:string)=>{
+    await supabase.auth.signOut();
+    const target=new URL("/login",request.url);
+    target.searchParams.set("error",error);
+    const redirect=NextResponse.redirect(target);
+    response.cookies.getAll().forEach(cookie=>redirect.cookies.set(cookie));
+    return redirect;
+  };
   if(!user&&!isLogin){const target=new URL("/login",request.url);target.searchParams.set("next",request.nextUrl.pathname);return NextResponse.redirect(target)}
   if(user){
     const {data:profiles,error:profileError}=await supabase.rpc("get_my_access_profile");
     const profile=Array.isArray(profiles)?profiles[0]:profiles;
-    if(profileError)return NextResponse.redirect(new URL("/login?error=profile",request.url));
-    if(!profile)return NextResponse.redirect(new URL("/login?error=unregistered",request.url));
-    if(profile.status!=="active"){await supabase.auth.signOut();return NextResponse.redirect(new URL(`/login?error=${profile.status||"inactive"}`,request.url))}
+    if(profileError)return clearSessionAndRedirect("profile");
+    if(!profile)return clearSessionAndRedirect("unregistered");
+    if(profile.status!=="active")return clearSessionAndRedirect(profile.status||"inactive");
     if(request.nextUrl.pathname.startsWith("/users")&&profile?.role!=="super_admin")return NextResponse.redirect(new URL("/?error=forbidden",request.url));
     if(request.nextUrl.pathname.startsWith("/settings")&&!['super_admin','fleet_manager','finance_approver','dispatcher'].includes(profile?.role||''))return NextResponse.redirect(new URL("/?error=forbidden",request.url));
     if(isLogin)return NextResponse.redirect(new URL("/",request.url));
