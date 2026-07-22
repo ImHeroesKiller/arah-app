@@ -1,5 +1,3 @@
-[main ac8bb78] fix: allow public static assets
- 1 file changed, 1 insertion(+), 1 deletion(-)
 import {createServerClient} from "@supabase/ssr";
 import {NextResponse,type NextRequest} from "next/server";
 
