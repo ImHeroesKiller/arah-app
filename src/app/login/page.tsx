@@ -18,8 +18,9 @@ export default function LoginPage() {
     event.preventDefault(); setLoading(true); setMessage("");
     const supabase = getSupabaseBrowserClient();
     if (!supabase) { setMessage("Konfigurasi Supabase belum tersedia."); setLoading(false); return; }
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) { setMessage("Email atau kata sandi tidak valid."); setLoading(false); return; }
+    if(data.user)await supabase.from("audit_logs").insert({actor_id:data.user.id,action:"auth.login",entity_type:"session",metadata:{method:"password"}});
     router.push("/");
   }
 
