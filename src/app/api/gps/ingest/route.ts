@@ -11,7 +11,9 @@ export async function POST(request:Request){
   const deviceCode=request.headers.get("x-device-id")||"";
   const token=request.headers.get("x-device-token")||"";
   if(!deviceCode||!token)return NextResponse.json({error:"Device credential wajib diisi"},{status:401});
-  const body=await request.json().catch(()=>null) as null|{latitude:number;longitude:number;speed_kph?:number;heading?:number;recorded_at?:string;fuel_percent?:number;odometer_km?:number};
+  const source=request.headers.get("x-telemetry-source")||"gps_device";
+  if(!["android","gps_device","uwb"].includes(source))return NextResponse.json({error:"Sumber telemetry tidak didukung"},{status:400});
+  const body=await request.json().catch(()=>null) as null|{latitude:number;longitude:number;speed_kph?:number;heading?:number;recorded_at?:string;fuel_percent?:number;odometer_km?:number;accuracy_m?:number;tag_id?:string;zone?:string};
   if(!body||!Number.isFinite(body.latitude)||!Number.isFinite(body.longitude)||Math.abs(body.latitude)>90||Math.abs(body.longitude)>180)
     return NextResponse.json({error:"Koordinat tidak valid"},{status:400});
   if(body.speed_kph!==undefined&&(!Number.isFinite(body.speed_kph)||body.speed_kph<0||body.speed_kph>250))return NextResponse.json({error:"Kecepatan tidak valid"},{status:400});
@@ -28,7 +30,7 @@ export async function POST(request:Request){
   const recordedAt=recordedDate.toISOString();
   const {data:recent}=await admin.from("gps_positions").select("id").eq("vehicle_id",device.vehicle_id).eq("recorded_at",recordedAt).maybeSingle();
   if(recent)return NextResponse.json({error:"Telemetry duplikat"},{status:409});
-  const {data:position,error}=await admin.from("gps_positions").insert({vehicle_id:device.vehicle_id,latitude:body.latitude,longitude:body.longitude,speed_kph:body.speed_kph||0,heading:body.heading||0,recorded_at:recordedAt}).select("id").single();
+  const {data:position,error}=await admin.from("gps_positions").insert({vehicle_id:device.vehicle_id,latitude:body.latitude,longitude:body.longitude,speed_kph:body.speed_kph||0,heading:body.heading||0,recorded_at:recordedAt,source_type:source,accuracy_m:body.accuracy_m??null,external_tag_id:body.tag_id??null,metadata:body.zone?{zone:body.zone}:{}}).select("id").single();
   if(error)return NextResponse.json({error:error.message},{status:500});
   const updates=await Promise.all([
     admin.from("gps_devices").update({last_seen_at:recordedAt}).eq("id",device.id),
@@ -45,5 +47,5 @@ export async function POST(request:Request){
     if(previous&&previous.is_inside!==inside)await admin.from("geofence_events").insert({geofence_id:fence.id,vehicle_id:device.vehicle_id,event_type:inside?"enter":"exit",latitude:body.latitude,longitude:body.longitude,recorded_at:recordedAt,source_position_id:position.id});
     await admin.from("geofence_vehicle_state").upsert({geofence_id:fence.id,vehicle_id:device.vehicle_id,is_inside:inside,updated_at:recordedAt});
   }
-  return NextResponse.json({accepted:true,vehicle_id:device.vehicle_id,recorded_at:recordedAt});
+  return NextResponse.json({accepted:true,source,vehicle_id:device.vehicle_id,recorded_at:recordedAt});
 }
