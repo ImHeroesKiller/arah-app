@@ -28,7 +28,8 @@ async function roadRoute(route:Omit<RouteItem,"points">,signal:AbortSignal):Prom
 }
 function pointAt(points:Coordinate[],progress:number){const lengths:number[]=[];let total=0;for(let i=1;i<points.length;i++){const dx=points[i][0]-points[i-1][0],dy=points[i][1]-points[i-1][1];const l=Math.hypot(dx,dy);lengths.push(l);total+=l}let target=progress*total,index=0;while(index<lengths.length-1&&target>lengths[index]){target-=lengths[index];index++}const a=points[index],b=points[index+1]||a,f=lengths[index]?target/lengths[index]:0;return{lng:a[0]+(b[0]-a[0])*f,lat:a[1]+(b[1]-a[1])*f,angle:Math.atan2(b[1]-a[1],b[0]-a[0])*180/Math.PI}}
 
-export default function FleetMap({selectedId,onSelect}:{selectedId:string;onSelect:(id:string)=>void}){
+type LiveVehicle={id:string;plate_number:string;last_lat:number|null;last_lng:number|null;last_gps_at:string|null};
+export default function FleetMap({selectedId,onSelect,vehicles=[]}:{selectedId:string;onSelect:(id:string)=>void;vehicles?:LiveVehicle[]}){
  const [routes,setRoutes]=useState<RouteItem[]>(seed.map(r=>({...r,points:r.waypoints})));
  const [tick,setTick]=useState(0); const [routing,setRouting]=useState<"loading"|"ready"|"fallback">("loading");
  useEffect(()=>{const controller=new AbortController();Promise.all(seed.map(r=>roadRoute(r,controller.signal))).then(x=>{setRoutes(x);setRouting("ready")}).catch(()=>setRouting("fallback"));return()=>controller.abort()},[]);
@@ -42,5 +43,6 @@ export default function FleetMap({selectedId,onSelect}:{selectedId:string;onSele
    <Layer id="route-flow" type="line" layout={{"line-cap":"round","line-join":"round"}} paint={{"line-color":"#fff","line-width":1.5,"line-opacity":.25+Math.abs(Math.sin(tick/8))*.65,"line-dasharray":[1.2+(tick%8)/12,2.8]}}/>
   </Source>
   {routes.map((r,i)=>{const p=pointAt(r.points,(r.progress+tick*.00016*(1+i*.08))%1);return <Marker key={r.id} longitude={p.lng} latitude={p.lat}><button className={selectedId===r.id?"vehicle-pin selected":"vehicle-pin"} style={{"--pin":r.color} as React.CSSProperties} onClick={()=>onSelect(r.id)}><Navigation style={{transform:`rotate(${90-p.angle}deg)`}}/><span>{r.id}</span></button></Marker>})}
+  {vehicles.filter(v=>v.last_lat!=null&&v.last_lng!=null).map(v=><Marker key={v.id} longitude={v.last_lng!} latitude={v.last_lat!}><button className={selectedId===v.plate_number?"vehicle-pin selected live":"vehicle-pin live"} style={{"--pin":"#35d49a"} as React.CSSProperties} onClick={()=>onSelect(v.plate_number)} title={`GPS ${v.last_gps_at||""}`}><Navigation/><span>{v.plate_number} · GPS</span></button></Marker>)}
  </Map><div className={`routing-state ${routing}`}>{routing==="loading"?"OSRM SNAPPING…":routing==="ready"?"OSRM ROAD MATCHED":"ROUTING FALLBACK"}</div></div>
 }
