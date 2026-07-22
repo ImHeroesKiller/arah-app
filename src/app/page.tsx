@@ -3,7 +3,8 @@
 import dynamic from "next/dynamic";
 import Image from "next/image";
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { getSupabaseBrowserClient } from "@/lib/supabase";
 import { motion } from "framer-motion";
 import {
   Bell, ChevronDown, Clock3, Gauge, LayoutDashboard,
@@ -32,7 +33,24 @@ export default function Home() {
   const [query, setQuery] = useState("");
   const [approvals, setApprovals] = useState([true,true,true]);
   const [mobileNav, setMobileNav] = useState(false);
+  const [liveStats, setLiveStats] = useState<{availability?:string,funds?:string,orders?:string,issues?:string}>({});
   const rows = useMemo(() => fleet.filter(x => JSON.stringify(x).toLowerCase().includes(query.toLowerCase())), [query]);
+  useEffect(() => {
+    const supabase = getSupabaseBrowserClient(); if (!supabase) return;
+    async function load() {
+      const [vehicles, orders, funds, issues] = await Promise.all([
+        supabase!.from("vehicles").select("status"), supabase!.from("orders").select("status"),
+        supabase!.from("operational_funds").select("amount,status"), supabase!.from("field_issues").select("resolved_at"),
+      ]);
+      if (vehicles.data?.length) { const available=vehicles.data.filter(x=>x.status==="available").length; setLiveStats(current=>({...current,availability:`${(available/vehicles.data.length*100).toFixed(1)}%`})); }
+      if (orders.data) setLiveStats(current=>({...current,orders:`${orders.data.filter(x=>x.status!=="delivered"&&x.status!=="cancelled").length} aktif`}));
+      if (funds.data?.length) { const total=funds.data.reduce((sum,row)=>sum+Number(row.amount),0); setLiveStats(current=>({...current,funds:`Rp ${(total/1e6).toLocaleString("id-ID",{maximumFractionDigits:1})} Jt`})); }
+      if (issues.data) setLiveStats(current=>({...current,issues:String(issues.data.filter(x=>!x.resolved_at).length)}));
+    }
+    load();
+    const channel=supabase.channel("command-center").on("postgres_changes",{event:"*",schema:"public"},load).subscribe();
+    return ()=>{void supabase.removeChannel(channel)};
+  },[]);
 
   return <main className="app-shell">
     <header className="topbar">
@@ -54,10 +72,10 @@ export default function Home() {
       <div className="page-heading"><div><p>CONTROL ROOM / <span>LIVE OVERVIEW</span></p><h1>{active}</h1><small>Selasa, 22 Juli 2026 · Operasional Jabodetabek</small></div><div className="live-pill"><i/> LIVE DATA <span>14:32:18 WIB</span></div></div>
 
       <section className="kpi-grid">
-        <Kpi icon={Truck} label="Availability Armada" value="87.5%" note="42 tersedia dari 48 unit" trend="+2 unit" tone="green"/>
-        <Kpi icon={WalletCards} label="Dana Operasional" value="Rp 286,4 Jt" note="82% dari budget harian" trend="3 approval" tone="blue"/>
-        <Kpi icon={PackageCheck} label="Order Handling" value="96.2%" note="23 aktif · 8 mendekati ETA" trend="SLA aman" tone="cyan"/>
-        <Kpi icon={Wrench} label="Issue di Lapangan" value="7" note="2 kritis · 5 dipantau" trend="-3 hari ini" tone="orange"/>
+        <Kpi icon={Truck} label="Availability Armada" value={liveStats.availability||"87.5%"} note="42 tersedia dari 48 unit" trend="+2 unit" tone="green"/>
+        <Kpi icon={WalletCards} label="Dana Operasional" value={liveStats.funds||"Rp 286,4 Jt"} note="82% dari budget harian" trend="3 approval" tone="blue"/>
+        <Kpi icon={PackageCheck} label="Order Handling" value={liveStats.orders||"96.2%"} note="23 aktif · 8 mendekati ETA" trend="SLA aman" tone="cyan"/>
+        <Kpi icon={Wrench} label="Issue di Lapangan" value={liveStats.issues||"7"} note="2 kritis · 5 dipantau" trend="-3 hari ini" tone="orange"/>
       </section>
 
       <section className="command-grid">
