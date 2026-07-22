@@ -1,0 +1,13 @@
+.fleet-focus-head { display:flex; align-items:center; justify-content:space-between; }
+.fleet-focus-head > button { height:28px; border:1px solid #246274; background:#0a2834; color:#7ee4ed; border-radius:6px; padding:0 8px; display:flex; align-items:center; gap:5px; font:700 7px var(--font-jakarta); cursor:pointer; }
+.fleet-focus-head svg { width:12px; }
+.focus-fleet-list { display:flex; gap:6px; overflow-x:auto; padding:1px 0 8px; scrollbar-width:thin; }
+.focus-fleet-list > button { min-width:145px; height:48px; border:1px solid #203648; background:#091826; color:#dbe8ee; border-radius:7px; padding:0 9px; display:grid; grid-template-columns:16px 1fr auto; align-items:center; gap:6px; text-align:left; cursor:pointer; }
+.focus-fleet-list > button > svg { width:13px; color:#607b8f; }
+.focus-fleet-list > button > span { display:flex; flex-direction:column; }
+.focus-fleet-list b { font-size:8px; }
+.focus-fleet-list small { font-size:6px; color:#6f8799; margin-top:3px; }
+.focus-fleet-list em { font-style:normal; font-size:6px; color:#6f8799; text-transform:uppercase; }
+.focus-fleet-list > button.pinned { border-color:#18c8de; background:#0b2b36; box-shadow:inset 0 0 14px #18c8de12; }
+.focus-fleet-list > button.pinned > svg,
+.focus-fleet-list > button.pinned em { color:#64e6f1; }
