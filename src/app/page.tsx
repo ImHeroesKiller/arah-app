@@ -3,17 +3,16 @@
 import dynamic from "next/dynamic";
 import Image from "next/image";
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
-import { getSupabaseBrowserClient } from "@/lib/supabase";
-import { motion } from "framer-motion";
+import { useMemo, useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import {
-  Bell, ChevronDown, Clock3, Gauge, LayoutDashboard,
-  Map, Menu, PackageCheck, Search, Settings, ShieldCheck, Truck, Users,
-  WalletCards, Wrench, Zap, ArrowUpRight, Check, X, Route, Fuel,
+  Bell, Check, ChevronLeft, ChevronRight, CircleDollarSign, Clock3, Fuel,
+  Gauge, LayoutDashboard, Map, Menu, PackageCheck, PanelLeftClose, Route,
+  Search, Settings, ShieldCheck, Truck, Users, WalletCards, Wrench, X,
+  AlertTriangle, Navigation, Radio, Maximize2, Minimize2, Layers3
 } from "lucide-react";
 
-const FleetMap = dynamic(() => import("@/components/FleetMap"), { ssr: false, loading: () => <div className="map-loading">Menyiapkan live map…</div> });
-const TruckScene = dynamic(() => import("@/components/TruckScene"), { ssr: false });
+const FleetMap = dynamic(() => import("@/components/FleetMap"), { ssr: false });
 
 const fleet = [
   { id:"B 9127 UYT", driver:"Dimas Prakoso", type:"Wingbox", route:"Priok → Cikarang", status:"In Transit", speed:58, eta:"16:42", fuel:76 },
@@ -24,83 +23,82 @@ const fleet = [
 
 const nav = [
   [LayoutDashboard,"Command Center"], [Map,"Live Map"], [Truck,"Armada"],
-  [PackageCheck,"Order & Booking"], [WalletCards,"Dana Operasional"], [Wrench,"Maintenance"],
-];
+  [PackageCheck,"Order Handling"], [WalletCards,"Dana Operasional"], [Wrench,"Issue Lapangan"],
+] as const;
+
+type Toast = { tone:"ok"|"info"; text:string } | null;
 
 export default function Home() {
   const [active, setActive] = useState("Command Center");
   const [selected, setSelected] = useState(fleet[0]);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [panelOpen, setPanelOpen] = useState(true);
+  const [expanded, setExpanded] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [approvals, setApprovals] = useState([true,true,true]);
-  const [mobileNav, setMobileNav] = useState(false);
-  const [liveStats, setLiveStats] = useState<{availability?:string,funds?:string,orders?:string,issues?:string}>({});
-  const rows = useMemo(() => fleet.filter(x => JSON.stringify(x).toLowerCase().includes(query.toLowerCase())), [query]);
-  useEffect(() => {
-    const supabase = getSupabaseBrowserClient(); if (!supabase) return;
-    async function load() {
-      const [vehicles, orders, funds, issues] = await Promise.all([
-        supabase!.from("vehicles").select("status"), supabase!.from("orders").select("status"),
-        supabase!.from("operational_funds").select("amount,status"), supabase!.from("field_issues").select("resolved_at"),
-      ]);
-      if (vehicles.data?.length) { const available=vehicles.data.filter(x=>x.status==="available").length; setLiveStats(current=>({...current,availability:`${(available/vehicles.data.length*100).toFixed(1)}%`})); }
-      if (orders.data) setLiveStats(current=>({...current,orders:`${orders.data.filter(x=>x.status!=="delivered"&&x.status!=="cancelled").length} aktif`}));
-      if (funds.data?.length) { const total=funds.data.reduce((sum,row)=>sum+Number(row.amount),0); setLiveStats(current=>({...current,funds:`Rp ${(total/1e6).toLocaleString("id-ID",{maximumFractionDigits:1})} Jt`})); }
-      if (issues.data) setLiveStats(current=>({...current,issues:String(issues.data.filter(x=>!x.resolved_at).length)}));
-    }
-    load();
-    const channel=supabase.channel("command-center").on("postgres_changes",{event:"*",schema:"public"},load).subscribe();
-    return ()=>{void supabase.removeChannel(channel)};
-  },[]);
+  const [toast, setToast] = useState<Toast>(null);
+  const rows = useMemo(()=>fleet.filter(x=>JSON.stringify(x).toLowerCase().includes(query.toLowerCase())),[query]);
+  const notify=(text:string,tone:"ok"|"info"="ok")=>{setToast({text,tone});window.setTimeout(()=>setToast(null),2600)};
+  const choose=(label:string)=>{setActive(label);setPanelOpen(true)};
 
-  return <main className="app-shell">
-    <header className="topbar">
-      <button className="mobile-menu" onClick={() => setMobileNav(!mobileNav)} aria-label="Buka navigasi"><Menu/></button>
-      <div className="brand"><Image src="/arah-logo-dark.webp" width={48} height={48} alt="ARAH Fleet System" priority/><div><b>ARAH</b><span>FLEET SYSTEM</span></div></div>
-      <label className="search"><Search/><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Cari nopol, pengemudi, atau rute…"/></label>
-      <div className="top-actions"><button className="icon-button" aria-label="Notifikasi"><Bell/><i/></button><div className="profile"><span>AW</span><div><b>Ary Wibowo</b><small>System Administrator</small></div><ChevronDown/></div></div>
+  return <main className={`map-app ${sidebarOpen?"":"sidebar-collapsed"}`}>
+    <div className="map-stage"><FleetMap selectedId={selected.id} onSelect={id=>{setSelected(fleet.find(x=>x.id===id)||fleet[0]);setPanelOpen(true)}} /></div>
+
+    <header className="map-header">
+      <button className="square-action mobile-only" onClick={()=>setSidebarOpen(v=>!v)} aria-label="Menu"><Menu/></button>
+      <div className="map-brand"><Image src="/arah-logo-dark.webp" width={44} height={44} alt="ARAH"/><div><b>ARAH</b><span>FLEET COMMAND CENTER</span></div></div>
+      <div className="live-status"><i/> LIVE OPERATIONS <span>JABODETABEK</span></div>
+      <div className="header-actions">
+        {searchOpen&&<label className="map-search"><Search/><input autoFocus value={query} onChange={e=>setQuery(e.target.value)} placeholder="Cari unit atau pengemudi"/></label>}
+        <button className="square-action" onClick={()=>setSearchOpen(v=>!v)} aria-label="Cari"><Search/></button>
+        <button className="square-action has-dot" onClick={()=>notify("Tidak ada notifikasi baru","info")} aria-label="Notifikasi"><Bell/></button>
+        <Link className="avatar" href="/users" title="Pengguna & akses">AW</Link>
+      </div>
     </header>
 
-    <aside className={mobileNav ? "sidebar open" : "sidebar"}>
-      <div className="nav-label">WORKSPACE</div>
-      {nav.map(([Icon,label]) => { const I=Icon as typeof LayoutDashboard; const l=label as string; return <button key={l} onClick={()=>{setActive(l);setMobileNav(false)}} className={active===l?"nav-item active":"nav-item"}><I/><span>{l}</span></button>})}
-      <div className="nav-label bottom">SYSTEM</div>
-      <Link className="nav-item" href="/users"><Users/><span>Pengguna & Akses</span></Link><button className="nav-item"><Settings/><span>Pengaturan</span></button>
-      <div className="system-card"><div><Zap/><span>System status</span><i/></div><b>All systems operational</b><small>Terakhir diperbarui 1 menit lalu</small></div>
+    <aside className="map-sidebar">
+      <button className="sidebar-toggle" onClick={()=>setSidebarOpen(v=>!v)} aria-label="Collapse sidebar">{sidebarOpen?<PanelLeftClose/>:<ChevronRight/>}</button>
+      <div className="nav-caption">WORKSPACE</div>
+      {nav.map(([Icon,label])=><button key={label} className={active===label?"map-nav active":"map-nav"} onClick={()=>choose(label)} title={label}><Icon/><span>{label}</span></button>)}
+      <div className="nav-spacer"/>
+      <Link className="map-nav" href="/users" title="Pengguna"><Users/><span>Pengguna</span></Link>
+      <button className="map-nav" onClick={()=>notify("Pengaturan sistem dibuka","info")}><Settings/><span>Pengaturan</span></button>
+      <div className="system-mini"><Radio/><div><b>System Online</b><small>GPS demo · OSRM active</small></div></div>
     </aside>
 
-    <section className="workspace">
-      <div className="page-heading"><div><p>CONTROL ROOM / <span>LIVE OVERVIEW</span></p><h1>{active}</h1><small>Selasa, 22 Juli 2026 · Operasional Jabodetabek</small></div><div className="live-pill"><i/> LIVE DATA <span>14:32:18 WIB</span></div></div>
-
-      <section className="kpi-grid">
-        <Kpi icon={Truck} label="Availability Armada" value={liveStats.availability||"87.5%"} note="42 tersedia dari 48 unit" trend="+2 unit" tone="green"/>
-        <Kpi icon={WalletCards} label="Dana Operasional" value={liveStats.funds||"Rp 286,4 Jt"} note="82% dari budget harian" trend="3 approval" tone="blue"/>
-        <Kpi icon={PackageCheck} label="Order Handling" value={liveStats.orders||"96.2%"} note="23 aktif · 8 mendekati ETA" trend="SLA aman" tone="cyan"/>
-        <Kpi icon={Wrench} label="Issue di Lapangan" value={liveStats.issues||"7"} note="2 kritis · 5 dipantau" trend="-3 hari ini" tone="orange"/>
-      </section>
-
-      <section className="command-grid">
-        <div className="map-card panel">
-          <div className="panel-head"><div><h2>Live Fleet Intelligence</h2><p>Pergerakan armada & optimasi rute secara real-time</p></div><div className="legend"><span><i className="green"/>Normal</span><span><i className="orange"/>Perhatian</span><span><i className="red"/>Delay</span></div></div>
-          <FleetMap selectedId={selected.id} onSelect={id=>setSelected(fleet.find(x=>x.id===id) || fleet[0])}/>
-          <div className="map-float"><Route/><div><small>ROUTE EFFICIENCY</small><b>92.6%</b></div><span>+3.1%</span></div>
-        </div>
-
-        <div className="side-column">
-          <div className="panel vehicle-card"><div className="panel-head compact"><div><p>SELECTED VEHICLE</p><h2>{selected.id}</h2></div><button className="more">•••</button></div><div className="truck-scene"><TruckScene/></div><div className="vehicle-title"><div><span className="status-dot"/> {selected.status}</div><small>{selected.type} · {selected.driver}</small></div><div className="telemetry"><Metric icon={Gauge} label="Speed" value={`${selected.speed} km/h`}/><Metric icon={Fuel} label="Fuel" value={`${selected.fuel}%`}/><Metric icon={Clock3} label="ETA" value={selected.eta}/><Metric icon={ShieldCheck} label="Health" value="Good"/></div><button className="detail-button">Lihat detail kendaraan <ArrowUpRight/></button></div>
-          <div className="panel alerts"><div className="panel-head compact"><div><h2>Operational Alerts</h2><p>Butuh perhatian Anda</p></div><span className="count">3</span></div><Alert tone="red" title="Potensi keterlambatan" text="B 9712 FQA · Tol Dalam Kota" time="2 menit"/><Alert tone="orange" title="Fuel level rendah" text="B 6231 WRY · 19% tersisa" time="8 menit"/><Alert tone="blue" title="Maintenance due" text="B 8280 KLM · Service 5.000 km" time="1 jam"/></div>
-        </div>
-      </section>
-
-      <section className="bottom-grid">
-        <div className="panel table-card"><div className="panel-head"><div><h2>Active Fleet Movement</h2><p>Pembaruan langsung dari perangkat telematika</p></div><button className="ghost">Lihat semua <ArrowUpRight/></button></div><div className="table-wrap"><table><thead><tr><th>Unit</th><th>Pengemudi</th><th>Rute</th><th>Status</th><th>Kecepatan</th><th>ETA</th></tr></thead><tbody>{rows.map(x=><tr key={x.id} onClick={()=>setSelected(x)} className={selected.id===x.id?"selected":""}><td><b>{x.id}</b><small>{x.type}</small></td><td>{x.driver}</td><td>{x.route}</td><td><span className={`badge ${x.status.toLowerCase().replace(" ","-")}`}>{x.status}</span></td><td>{x.speed} km/h</td><td>{x.eta}</td></tr>)}</tbody></table></div></div>
-        <div className="panel approvals"><div className="panel-head compact"><div><h2>Persetujuan Dana</h2><p>Clearance & operasional</p></div><span className="count amber">{approvals.filter(Boolean).length}</span></div>{[
-          ["Gate pass Tanjung Priok","B 9127 UYT","Rp 1.850.000"], ["Tol & BBM perjalanan","B 8831 KXR","Rp 2.275.000"], ["Overtime clearance Soetta","B 9712 FQA","Rp 1.200.000"]
-        ].map((x,i)=>approvals[i]&&<div className="approval" key={x[0]}><div><b>{x[0]}</b><small>{x[1]} · diajukan 12 menit lalu</small><strong>{x[2]}</strong></div><div><button onClick={()=>setApprovals(a=>a.map((v,j)=>j===i?false:v))} className="reject"><X/></button><button onClick={()=>setApprovals(a=>a.map((v,j)=>j===i?false:v))} className="approve"><Check/></button></div></div>)}{approvals.every(x=>!x)&&<div className="empty"><ShieldCheck/><b>Semua sudah diproses</b></div>}<button className="detail-button">Buka pusat persetujuan <ArrowUpRight/></button></div>
-      </section>
+    <section className="kpi-dock">
+      <MiniKpi icon={Truck} label="Availability" value="87.5%" tone="green" onClick={()=>choose("Armada")}/>
+      <MiniKpi icon={CircleDollarSign} label="Dana Operasional" value="Rp 286,4 Jt" tone="blue" onClick={()=>choose("Dana Operasional")}/>
+      <MiniKpi icon={PackageCheck} label="Order Aktif" value="23" tone="cyan" onClick={()=>choose("Order Handling")}/>
+      <MiniKpi icon={AlertTriangle} label="Issue Lapangan" value="7" tone="orange" onClick={()=>choose("Issue Lapangan")}/>
     </section>
+
+    <AnimatePresence>
+      {panelOpen&&<motion.section initial={{opacity:0,x:25}} animate={{opacity:1,x:0}} exit={{opacity:0,x:25}} className={`floating-window ${expanded?"expanded":""}`}>
+        <div className="window-bar"><div><span>OPERATIONS / LIVE</span><h1>{active}</h1></div><div><button onClick={()=>setExpanded(v=>!v)}>{expanded?<Minimize2/>:<Maximize2/>}</button><button onClick={()=>setPanelOpen(false)}><X/></button></div></div>
+        <DashboardContent active={active} rows={rows} selected={selected} setSelected={setSelected} approvals={approvals} setApprovals={setApprovals} notify={notify}/>
+      </motion.section>}
+    </AnimatePresence>
+    {!panelOpen&&<button className="reopen-panel" onClick={()=>setPanelOpen(true)}><ChevronLeft/> Buka panel</button>}
+
+    <div className="map-tools"><button onClick={()=>notify("Tampilan layer: traffic & kendaraan","info")}><Layers3/></button><button onClick={()=>notify("Map dipusatkan ke armada terpilih","info")}><Navigation/></button></div>
+    <div className="provider-pill"><Route/> OSRM ROAD-SNAPPED <i/> GPS DEMO</div>
+    {toast&&<div className={`action-toast ${toast.tone}`}><Check/>{toast.text}</div>}
   </main>
 }
 
-function Kpi({icon:Icon,label,value,note,trend,tone}:{icon:typeof Truck,label:string,value:string,note:string,trend:string,tone:string}) { return <motion.article initial={{opacity:0,y:12}} animate={{opacity:1,y:0}} className={`kpi panel ${tone}`}><div className="kpi-icon"><Icon/></div><div><p>{label}</p><h2>{value}</h2><small>{note}</small></div><span className="trend">{trend}</span></motion.article> }
-function Metric({icon:Icon,label,value}:{icon:typeof Gauge,label:string,value:string}) { return <div><Icon/><span><small>{label}</small><b>{value}</b></span></div> }
-function Alert({tone,title,text,time}:{tone:string,title:string,text:string,time:string}) { return <div className="alert-row"><i className={tone}/><div><b>{title}</b><small>{text}</small></div><time>{time}</time></div> }
+function DashboardContent({active,rows,selected,setSelected,approvals,setApprovals,notify}:{active:string;rows:typeof fleet;selected:typeof fleet[number];setSelected:(x:typeof fleet[number])=>void;approvals:boolean[];setApprovals:(x:boolean[])=>void;notify:(x:string,t?:"ok"|"info")=>void}) {
+  if(active==="Armada"||active==="Live Map") return <div className="window-content"><SectionTitle title="Armada Aktif" sub="Pilih unit untuk memusatkan monitoring"/><FleetList rows={rows} selected={selected} setSelected={setSelected}/></div>;
+  if(active==="Order Handling") return <div className="window-content"><SectionTitle title="Order Handling" sub="23 order aktif · SLA 96,2%"/><StatRows rows={[["ORD-260722-118","Priok → Cikarang","In Transit"],["ORD-260722-116","Cikande → Priok","In Transit"],["ORD-260722-109","Marunda → Soetta","Delayed"]]}/><button className="primary-wide" onClick={()=>notify("Form order baru siap digunakan","info")}>+ Buat order baru</button></div>;
+  if(active==="Dana Operasional") return <div className="window-content"><SectionTitle title="Persetujuan Dana" sub="Permintaan clearance & perjalanan"/>{approvals.map((v,i)=>v&&<Approval key={i} i={i} setApprovals={setApprovals} approvals={approvals} notify={notify}/>) }{approvals.every(v=>!v)&&<div className="window-empty"><ShieldCheck/>Semua permintaan sudah diproses</div>}</div>;
+  if(active==="Issue Lapangan") return <div className="window-content"><SectionTitle title="Operational Issues" sub="2 kritis · 5 dalam pemantauan"/><StatRows rows={[["Potensi keterlambatan","B 9712 FQA · Tol Dalam Kota","Kritis"],["Fuel level rendah","B 6231 WRY · 19% tersisa","Pantau"],["Maintenance due","B 8280 KLM · Service 5.000 km","Terjadwal"]]}/><button className="primary-wide" onClick={()=>notify("Form laporan issue dibuka","info")}>+ Laporkan issue</button></div>;
+  return <div className="window-content"><SectionTitle title="Live Fleet Intelligence" sub="Ringkasan operasional saat ini"/><div className="selected-unit"><div><span>SELECTED VEHICLE</span><h2>{selected.id}</h2><small>{selected.type} · {selected.driver}</small></div><b>{selected.status}</b></div><div className="compact-metrics"><Metric icon={Gauge} label="Speed" value={`${selected.speed} km/h`}/><Metric icon={Fuel} label="Fuel" value={`${selected.fuel}%`}/><Metric icon={Clock3} label="ETA" value={selected.eta}/><Metric icon={ShieldCheck} label="Health" value="Good"/></div><SectionTitle title="Active Fleet Movement" sub="Pembaruan simulasi telematika"/><FleetList rows={rows} selected={selected} setSelected={setSelected}/></div>;
+}
+
+function MiniKpi({icon:Icon,label,value,tone,onClick}:{icon:typeof Truck;label:string;value:string;tone:string;onClick:()=>void}){return <button className={`mini-kpi ${tone}`} onClick={onClick}><Icon/><span><small>{label}</small><b>{value}</b></span><ChevronRight/></button>}
+function SectionTitle({title,sub}:{title:string;sub:string}){return <div className="section-title"><div><h2>{title}</h2><p>{sub}</p></div><button>•••</button></div>}
+function FleetList({rows,selected,setSelected}:{rows:typeof fleet;selected:typeof fleet[number];setSelected:(x:typeof fleet[number])=>void}){return <div className="fleet-list">{rows.map(x=><button key={x.id} onClick={()=>setSelected(x)} className={selected.id===x.id?"selected":""}><i className={x.status==="Delayed"?"delay":x.status==="Ready"?"ready":""}/><div><b>{x.id}</b><small>{x.driver} · {x.route}</small></div><span><b>{x.speed} km/h</b><small>ETA {x.eta}</small></span><ChevronRight/></button>)}</div>}
+function Metric({icon:Icon,label,value}:{icon:typeof Gauge;label:string;value:string}){return <div><Icon/><span><small>{label}</small><b>{value}</b></span></div>}
+function StatRows({rows}:{rows:string[][]}){return <div className="stat-rows">{rows.map(r=><button key={r[0]}><div><b>{r[0]}</b><small>{r[1]}</small></div><span>{r[2]}</span><ChevronRight/></button>)}</div>}
+function Approval({i,setApprovals,approvals,notify}:{i:number;setApprovals:(x:boolean[])=>void;approvals:boolean[];notify:(x:string)=>void}){const data=[["Gate pass Tanjung Priok","Rp 1.850.000"],["Tol & BBM perjalanan","Rp 2.275.000"],["Overtime clearance Soetta","Rp 1.200.000"]][i];const act=(ok:boolean)=>{setApprovals(approvals.map((v,j)=>j===i?false:v));notify(ok?"Permintaan disetujui":"Permintaan ditolak")};return <div className="approval-mini"><div><b>{data[0]}</b><small>B 9127 UYT · 12 menit lalu</small><strong>{data[1]}</strong></div><button className="reject" onClick={()=>act(false)}><X/></button><button className="approve" onClick={()=>act(true)}><Check/></button></div>}
