@@ -1,3 +1,5 @@
+[main ac8bb78] fix: allow public static assets
+ 1 file changed, 1 insertion(+), 1 deletion(-)
 import {createServerClient} from "@supabase/ssr";
 import {NextResponse,type NextRequest} from "next/server";
 
@@ -41,4 +43,4 @@ export async function proxy(request:NextRequest){
   return response;
 }
 
-export const config={matcher:["/((?!_next/static|_next/image|favicon.ico|api/).*)"]};
+export const config={matcher:["/((?!_next/static|_next/image|api/|.*\\.(?:svg|png|jpg|jpeg|webp|gif|ico|webmanifest)$).*)"]};
