@@ -3,7 +3,8 @@ import {createContext,useContext,useState} from "react";
 
 export type Language="id"|"en";
 export type DisplayPreferences={language:Language;windowOpacity:number;fontScale:number;contrast:"normal"|"high";motion:boolean;traffic:boolean};
-const defaults:DisplayPreferences={language:"id",windowOpacity:94,fontScale:100,contrast:"normal",motion:true,traffic:true};
+export const defaultDisplayPreferences:DisplayPreferences={language:"id",windowOpacity:94,fontScale:115,contrast:"normal",motion:true,traffic:true};
+const defaults=defaultDisplayPreferences;
 const Context=createContext<{prefs:DisplayPreferences;setPrefs:(x:DisplayPreferences)=>void}>({prefs:defaults,setPrefs:()=>{}});
 
 export function DisplayPreferencesProvider({children}:{children:React.ReactNode}){
