@@ -16,8 +16,11 @@ export async function proxy(request:NextRequest){
   const isLogin=request.nextUrl.pathname==="/login";
   if(!user&&!isLogin){const target=new URL("/login",request.url);target.searchParams.set("next",request.nextUrl.pathname);return NextResponse.redirect(target)}
   if(user){
-    const {data:profile}=await supabase.from("profiles").select("role,status").eq("id",user.id).maybeSingle();
-    if(profile?.status!=="active"){await supabase.auth.signOut();return NextResponse.redirect(new URL("/login?error=inactive",request.url))}
+    const {data:profiles,error:profileError}=await supabase.rpc("get_my_access_profile");
+    const profile=Array.isArray(profiles)?profiles[0]:profiles;
+    if(profileError)return NextResponse.redirect(new URL("/login?error=profile",request.url));
+    if(!profile)return NextResponse.redirect(new URL("/login?error=unregistered",request.url));
+    if(profile.status!=="active"){await supabase.auth.signOut();return NextResponse.redirect(new URL(`/login?error=${profile.status||"inactive"}`,request.url))}
     if(request.nextUrl.pathname.startsWith("/users")&&profile?.role!=="super_admin")return NextResponse.redirect(new URL("/?error=forbidden",request.url));
     if(request.nextUrl.pathname.startsWith("/settings")&&!['super_admin','fleet_manager','finance_approver','dispatcher'].includes(profile?.role||''))return NextResponse.redirect(new URL("/?error=forbidden",request.url));
     if(isLogin)return NextResponse.redirect(new URL("/",request.url));
