@@ -2,6 +2,7 @@
 
 import dynamic from "next/dynamic";
 import Image from "next/image";
+import Link from "next/link";
 import { useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import {
@@ -36,7 +37,7 @@ export default function Home() {
   return <main className="app-shell">
     <header className="topbar">
       <button className="mobile-menu" onClick={() => setMobileNav(!mobileNav)} aria-label="Buka navigasi"><Menu/></button>
-      <div className="brand"><Image src="/arah-logo.png" width={54} height={54} alt="ARAH Fleet System" priority/><div><b>ARAH</b><span>FLEET SYSTEM</span></div></div>
+      <div className="brand"><Image src="/arah-logo-dark.webp" width={48} height={48} alt="ARAH Fleet System" priority/><div><b>ARAH</b><span>FLEET SYSTEM</span></div></div>
       <label className="search"><Search/><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Cari nopol, pengemudi, atau rute…"/></label>
       <div className="top-actions"><button className="icon-button" aria-label="Notifikasi"><Bell/><i/></button><div className="profile"><span>AW</span><div><b>Ary Wibowo</b><small>System Administrator</small></div><ChevronDown/></div></div>
     </header>
@@ -45,7 +46,7 @@ export default function Home() {
       <div className="nav-label">WORKSPACE</div>
       {nav.map(([Icon,label]) => { const I=Icon as typeof LayoutDashboard; const l=label as string; return <button key={l} onClick={()=>{setActive(l);setMobileNav(false)}} className={active===l?"nav-item active":"nav-item"}><I/><span>{l}</span></button>})}
       <div className="nav-label bottom">SYSTEM</div>
-      <button className="nav-item"><Users/><span>Pengguna & Akses</span></button><button className="nav-item"><Settings/><span>Pengaturan</span></button>
+      <Link className="nav-item" href="/users"><Users/><span>Pengguna & Akses</span></Link><button className="nav-item"><Settings/><span>Pengaturan</span></button>
       <div className="system-card"><div><Zap/><span>System status</span><i/></div><b>All systems operational</b><small>Terakhir diperbarui 1 menit lalu</small></div>
     </aside>
 
@@ -53,10 +54,10 @@ export default function Home() {
       <div className="page-heading"><div><p>CONTROL ROOM / <span>LIVE OVERVIEW</span></p><h1>{active}</h1><small>Selasa, 22 Juli 2026 · Operasional Jabodetabek</small></div><div className="live-pill"><i/> LIVE DATA <span>14:32:18 WIB</span></div></div>
 
       <section className="kpi-grid">
-        <Kpi icon={Truck} label="Total Armada" value="48" note="36 sedang beroperasi" trend="+4.2%" tone="blue"/>
-        <Kpi icon={Gauge} label="Utilisasi Armada" value="87.4%" note="Target bulanan 85%" trend="+2.4%" tone="cyan"/>
-        <Kpi icon={PackageCheck} label="Pengiriman Aktif" value="23" note="8 tiba dalam < 2 jam" trend="3 prioritas" tone="orange"/>
-        <Kpi icon={Clock3} label="On-Time Delivery" value="94.8%" note="142 pengiriman bulan ini" trend="+1.8%" tone="green"/>
+        <Kpi icon={Truck} label="Availability Armada" value="87.5%" note="42 tersedia dari 48 unit" trend="+2 unit" tone="green"/>
+        <Kpi icon={WalletCards} label="Dana Operasional" value="Rp 286,4 Jt" note="82% dari budget harian" trend="3 approval" tone="blue"/>
+        <Kpi icon={PackageCheck} label="Order Handling" value="96.2%" note="23 aktif · 8 mendekati ETA" trend="SLA aman" tone="cyan"/>
+        <Kpi icon={Wrench} label="Issue di Lapangan" value="7" note="2 kritis · 5 dipantau" trend="-3 hari ini" tone="orange"/>
       </section>
 
       <section className="command-grid">
