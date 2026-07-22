@@ -1,6 +1,6 @@
 alter table public.profiles add column if not exists status text not null default 'active' check(status in ('active','invited','suspended'));
 alter table public.profiles add column if not exists updated_at timestamptz not null default now();
-create table if not exists public.notifications(id bigint generated always as identity primary key,user_id uuid references public.profiles(id) on delete cascade,title text not null,body text,kind text not null default 'info',read_at timestamptz,created_at timestamptz not null default now());
+create table if not exists public.notifications(id uuid primary key default gen_random_uuid(),user_id uuid references public.profiles(id) on delete cascade,title text not null,body text,kind text not null default 'info',read_at timestamptz,created_at timestamptz not null default now());
 create table if not exists public.audit_logs(id bigint generated always as identity primary key,actor_id uuid references public.profiles(id),action text not null,entity_type text not null,entity_id text,metadata jsonb not null default '{}'::jsonb,created_at timestamptz not null default now());
 create table if not exists public.app_settings(id uuid primary key default gen_random_uuid(),key text unique not null,value jsonb not null default '{}'::jsonb,updated_by uuid references public.profiles(id),updated_at timestamptz not null default now());
 alter table public.notifications enable row level security;alter table public.audit_logs enable row level security;alter table public.app_settings enable row level security;
