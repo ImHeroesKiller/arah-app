@@ -10,7 +10,7 @@ cp .env.example .env.local
 npm run dev
 ```
 
-The app runs with realistic demo data if Supabase variables are absent. Configure the variables listed in `.env.example` in Vercel when the backend is ready.
+Operational data (fleet, orders, routes) is loaded from Supabase — there is no hardcoded demo dataset in the frontend. Seed/demo rows live only in `supabase/migrations/` (latest: `202608010001_demo_10_fleet_routes.sql`). Configure Supabase env vars in `.env.local` / Vercel for a working app.
 
 ## Production
 
