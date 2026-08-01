@@ -110,8 +110,8 @@ async function refresh(request: Request) {
       const geometry = {type: "LineString", coordinates: calculated.coordinates};
       const provider =
         calculated.provider === "tomtom-traffic"
-          ? `tomtom-traffic+delay${calculated.trafficDelayMinutes}m`
-          : "osrm-freeflow";
+          ? `tomtom-fastest-toll+delay${calculated.trafficDelayMinutes}m${calculated.usesToll ? "+toll" : ""}`
+          : "osrm-fastest";
 
       const [{error: routeErr}, {error: orderErr}] = await Promise.all([
         admin

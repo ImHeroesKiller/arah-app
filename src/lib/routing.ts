@@ -1,4 +1,4 @@
-/** Traffic-aware routing: TomTom (realtime traffic) with OSRM free-flow fallback. */
+/** Traffic-aware routing: fastest path with toll preference (TomTom) + OSRM fallback. */
 
 export type LonLat = [number, number]; // GeoJSON order: [lng, lat]
 export type RouteResult = {
@@ -7,6 +7,8 @@ export type RouteResult = {
   durationMinutes: number;
   trafficDelayMinutes: number;
   provider: "tomtom-traffic" | "osrm";
+  usesToll?: boolean;
+  score?: number;
 };
 
 const OSRM = "https://router.project-osrm.org";
@@ -15,46 +17,127 @@ function clampCoords(points: LonLat[]): LonLat[] {
   return points.filter(([lng, lat]) => Number.isFinite(lng) && Number.isFinite(lat) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180);
 }
 
-/** TomTom Routing API with live traffic (travelMode truck). */
-export async function routeWithTomTom(from: LonLat, to: LonLat, apiKey: string, signal?: AbortSignal): Promise<RouteResult> {
-  // TomTom expects lat,lon path segments
-  const path = `${from[1]},${from[0]}:${to[1]},${to[0]}`;
-  const url =
-    `https://api.tomtom.com/routing/1/calculateRoute/${path}/json` +
-    `?key=${encodeURIComponent(apiKey)}` +
-    `&traffic=true&travelMode=truck&routeType=fastest` +
-    `&vehicleMaxSpeed=90&sectionType=traffic&computeBestOrder=false`;
-  const res = await fetch(url, {signal, next: {revalidate: 0}});
-  if (!res.ok) throw new Error(`TomTom routing ${res.status}`);
-  const data = await res.json();
-  const route = data?.routes?.[0];
-  if (!route) throw new Error("TomTom: no route");
-  const summary = route.summary || {};
-  const legs = route.legs || [];
+type TomTomRoute = {
+  summary?: {
+    travelTimeInSeconds?: number;
+    trafficDelayInSeconds?: number;
+    lengthInMeters?: number;
+  };
+  legs?: {points?: {latitude: number; longitude: number}[]}[];
+  sections?: {sectionType?: string; startPointIndex?: number; endPointIndex?: number}[];
+};
+
+function geometryFromTomTom(route: TomTomRoute): LonLat[] {
   const points: LonLat[] = [];
-  for (const leg of legs) {
+  for (const leg of route.legs || []) {
     for (const p of leg.points || []) {
       if (p?.longitude != null && p?.latitude != null) points.push([p.longitude, p.latitude]);
     }
   }
+  return points;
+}
+
+function tollMeters(route: TomTomRoute, lengthM: number): number {
+  const sections = route.sections || [];
+  const tollSections = sections.filter((s) => /toll/i.test(s.sectionType || ""));
+  if (!tollSections.length) return 0;
+  // Approximate: share of points covered by toll sections vs total length
+  let tollPoints = 0;
+  let totalPoints = 0;
+  for (const leg of route.legs || []) totalPoints += (leg.points || []).length;
+  for (const s of tollSections) {
+    const a = s.startPointIndex ?? 0;
+    const b = s.endPointIndex ?? a;
+    tollPoints += Math.max(0, b - a + 1);
+  }
+  if (totalPoints <= 0) return lengthM * 0.35;
+  return lengthM * Math.min(1, tollPoints / totalPoints);
+}
+
+/**
+ * Score: lower is better.
+ * Primary = travel time (fastest).
+ * Bonus for toll usage so when times are close, prefer highways/toll corridors.
+ * Penalty for large traffic delay.
+ */
+function scoreRoute(travelSec: number, delaySec: number, lengthM: number, tollM: number): number {
+  const tollRatio = lengthM > 0 ? tollM / lengthM : 0;
+  // Prefer toll: up to ~8% time credit when fully on toll corridor
+  const tollBonusSec = travelSec * 0.08 * tollRatio;
+  // Slight delay penalty already in travel time; add soft extra for heavy congestion
+  const delayPenalty = delaySec * 0.15;
+  return travelSec - tollBonusSec + delayPenalty;
+}
+
+function toResult(route: TomTomRoute): RouteResult {
+  const summary = route.summary || {};
+  const points = geometryFromTomTom(route);
   if (points.length < 2) throw new Error("TomTom: empty geometry");
   const travelSec = Number(summary.travelTimeInSeconds || 0);
   const delaySec = Number(summary.trafficDelayInSeconds || 0);
   const lengthM = Number(summary.lengthInMeters || 0);
+  const tollM = tollMeters(route, lengthM);
+  const score = scoreRoute(travelSec, delaySec, lengthM, tollM);
   return {
     coordinates: points,
     distanceKm: Math.round((lengthM / 1000) * 100) / 100,
     durationMinutes: Math.max(1, Math.round(travelSec / 60)),
     trafficDelayMinutes: Math.max(0, Math.round(delaySec / 60)),
     provider: "tomtom-traffic",
+    usesToll: tollM > 200,
+    score,
   };
 }
 
-/** OSRM free-flow (no live traffic) — last-resort fallback. */
+/**
+ * TomTom: fastest with traffic, allow toll roads, request alternatives,
+ * then pick best score (time-first, toll-preferred).
+ */
+export async function routeWithTomTom(from: LonLat, to: LonLat, apiKey: string, signal?: AbortSignal): Promise<RouteResult> {
+  const path = `${from[1]},${from[0]}:${to[1]},${to[0]}`;
+  const params = new URLSearchParams({
+    key: apiKey,
+    traffic: "true",
+    travelMode: "truck",
+    routeType: "fastest",
+    vehicleMaxSpeed: "90",
+    vehicleCommercial: "true",
+    // Do NOT avoid tollRoads — we prioritize them when ETA is competitive
+    sectionType: "tollRoad",
+    maxAlternatives: "3",
+    computeBestOrder: "false",
+    // Keep ferries avoided for truck logistics
+    avoid: "ferries",
+  });
+  // Request traffic sections too (repeat param supported by TomTom)
+  const url =
+    `https://api.tomtom.com/routing/1/calculateRoute/${path}/json?${params.toString()}` +
+    `&sectionType=traffic`;
+  const res = await fetch(url, {signal, cache: "no-store"});
+  if (!res.ok) throw new Error(`TomTom routing ${res.status}`);
+  const data = await res.json();
+  const routes = (data?.routes || []) as TomTomRoute[];
+  if (!routes.length) throw new Error("TomTom: no route");
+
+  const ranked = routes
+    .map((r) => {
+      try {
+        return toResult(r);
+      } catch {
+        return null;
+      }
+    })
+    .filter((r): r is RouteResult => !!r)
+    .sort((a, b) => (a.score ?? 1e12) - (b.score ?? 1e12));
+
+  if (!ranked.length) throw new Error("TomTom: no usable geometry");
+  return ranked[0];
+}
+
+/** OSRM free-flow (no live traffic / no toll metadata) — last-resort fallback. */
 export async function routeWithOsrm(from: LonLat, to: LonLat, signal?: AbortSignal): Promise<RouteResult> {
   const coords = clampCoords([from, to]);
   if (coords.length < 2) throw new Error("OSRM: invalid coordinates");
-  // Snap endpoints to road network for better geometry
   const nearest = await Promise.all(
     coords.map(async (p) => {
       const r = await fetch(`${OSRM}/nearest/v1/driving/${p[0]},${p[1]}?number=1`, {signal});
@@ -63,38 +146,48 @@ export async function routeWithOsrm(from: LonLat, to: LonLat, signal?: AbortSign
       return (j.waypoints?.[0]?.location as LonLat) || p;
     })
   );
+  // overview=full fastest driving profile; OSRM prefers major roads which often align with toll corridors
   const r = await fetch(
-    `${OSRM}/route/v1/driving/${nearest.map((p) => p.join(",")).join(";")}?overview=full&geometries=geojson&steps=false`,
+    `${OSRM}/route/v1/driving/${nearest.map((p) => p.join(",")).join(";")}?overview=full&geometries=geojson&steps=false&alternatives=true`,
     {signal}
   );
   if (!r.ok) throw new Error(`OSRM ${r.status}`);
   const j = await r.json();
-  const route = j.routes?.[0];
-  if (!route) throw new Error("OSRM: no route");
+  const list = (j.routes || []) as {distance: number; duration: number; geometry?: {coordinates?: LonLat[]}}[];
+  if (!list.length) throw new Error("OSRM: no route");
+  // Pick shortest duration (fastest)
+  const best = [...list].sort((a, b) => a.duration - b.duration)[0];
   return {
-    coordinates: (route.geometry?.coordinates as LonLat[]) || nearest,
-    distanceKm: Math.round((route.distance / 1000) * 100) / 100,
-    durationMinutes: Math.max(1, Math.round(route.duration / 60)),
+    coordinates: (best.geometry?.coordinates as LonLat[]) || nearest,
+    distanceKm: Math.round((best.distance / 1000) * 100) / 100,
+    durationMinutes: Math.max(1, Math.round(best.duration / 60)),
     trafficDelayMinutes: 0,
     provider: "osrm",
+    usesToll: false,
   };
 }
 
-/** Prefer TomTom traffic when key is set; otherwise OSRM. */
+/** Prefer TomTom traffic+toll algorithm when key is set; otherwise OSRM fastest. */
 export async function calculateTrafficRoute(from: LonLat, to: LonLat, tomtomKey?: string | null, signal?: AbortSignal): Promise<RouteResult> {
   const a = clampCoords([from])[0];
   const b = clampCoords([to])[0];
   if (!a || !b) throw new Error("Invalid from/to");
-  // Same-point short circuit
   const distM = haversineMeters(a, b);
   if (distM < 40) {
-    return {coordinates: [a, b], distanceKm: 0.04, durationMinutes: 1, trafficDelayMinutes: 0, provider: tomtomKey ? "tomtom-traffic" : "osrm"};
+    return {
+      coordinates: [a, b],
+      distanceKm: 0.04,
+      durationMinutes: 1,
+      trafficDelayMinutes: 0,
+      provider: tomtomKey ? "tomtom-traffic" : "osrm",
+      usesToll: false,
+    };
   }
   if (tomtomKey) {
     try {
       return await routeWithTomTom(a, b, tomtomKey, signal);
     } catch {
-      // fall through to OSRM
+      // fall through
     }
   }
   return routeWithOsrm(a, b, signal);
